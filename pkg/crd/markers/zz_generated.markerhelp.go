@@ -24,6 +24,17 @@ import (
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
 
+func (Default) Help() *markers.DefinitionHelp {
+	return &markers.DefinitionHelp{
+		Category: "CRD validation",
+		DetailedHelp: markers.DetailedHelp{
+			Summary: "sets the default value for this field. ",
+			Details: " A default value will be accepted as a json-formatted string (e.g. `true`, `\"Cluster\"`, `1.24`, `[1,2]`, `{\"policy\": \"delete\"}`) and validated as the type indicated for the field.",
+		},
+		FieldHelp: map[string]markers.DetailedHelp{},
+	}
+}
+
 func (Enum) Help() *markers.DefinitionHelp {
 	return &markers.DefinitionHelp{
 		Category: "CRD validation",
