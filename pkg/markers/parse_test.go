@@ -70,6 +70,10 @@ var _ = Describe("Parsing", func() {
 			mustDefine(reg, "testing:tripleDefined", DescribesPackage, 0)
 			mustDefine(reg, "testing:tripleDefined", DescribesField, "")
 			mustDefine(reg, "testing:tripleDefined", DescribesType, false)
+
+			rawDef, err := MakeRawDefinition("testing:rawDefinition", DescribesField, []byte{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(reg.Register(rawDef)).To(Succeed())
 		})
 
 		It("should parse name-only markers", parseTestCase{reg: &reg, raw: "+testing:empty", output: struct{}{}}.Run)
@@ -155,6 +159,8 @@ var _ = Describe("Parsing", func() {
 			It("should properly parse the field-level one", parseTestCase{reg: &reg, raw: "+testing:tripleDefined=foo", output: "foo", target: DescribesField}.Run)
 			It("should properly parse the type-level one", parseTestCase{reg: &reg, raw: "+testing:tripleDefined=true", output: true, target: DescribesType}.Run)
 		})
+
+		It("should support a raw definition", parseTestCase{reg: &reg, raw: "+testing:rawDefinition=[1,2]", output: []byte("[1,2]"), target: DescribesField}.Run)
 	})
 
 	Context("of individual arguments", func() {

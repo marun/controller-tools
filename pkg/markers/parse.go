@@ -505,6 +505,9 @@ type Definition struct {
 	// Strict indicates that this definition should error out when parsing if
 	// not all non-optional fields were seen.
 	Strict bool
+	// rawArguments indicates that the output type should be populated with all raw
+	// unparsed argument data. It should only be set if Output is convertible to []byte.
+	rawArguments bool
 }
 
 // AnonymousField indicates that the definition has one field,
@@ -553,7 +556,11 @@ func (d *Definition) loadFields() error {
 	}
 	if d.Output.Kind() != reflect.Struct {
 		// anonymous field type
-		argType, err := ArgumentFromType(d.Output)
+		rawType := d.Output
+		if d.rawArguments {
+			rawType = rawArgsType
+		}
+		argType, err := ArgumentFromType(rawType)
 		if err != nil {
 			return err
 		}
@@ -697,6 +704,28 @@ func MakeDefinition(name string, target TargetType, output interface{}) (*Defini
 		Target: target,
 		Output: reflect.TypeOf(output),
 		Strict: true,
+	}
+
+	if err := def.loadFields(); err != nil {
+		return nil, err
+	}
+
+	return def, nil
+}
+
+// MakeRawDefinition constructs a definition from a name, type, and the output type.  An
+// error will be returned if the output type is not convertible to RawArguments.
+func MakeRawDefinition(name string, target TargetType, output interface{}) (*Definition, error) {
+	outputType := reflect.TypeOf(output)
+	if !outputType.ConvertibleTo(rawArgsType) {
+		return nil, fmt.Errorf("output type %q is not convertible to %q", outputType.Name(), rawArgsType.Name())
+	}
+
+	def := &Definition{
+		Name:         name,
+		Target:       target,
+		Output:       outputType,
+		rawArguments: true,
 	}
 
 	if err := def.loadFields(); err != nil {

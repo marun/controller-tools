@@ -17,11 +17,12 @@ limitations under the License.
 package markers
 
 import (
+	"encoding/json"
 	"fmt"
 
-	"encoding/json"
-
+	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
@@ -72,6 +73,10 @@ var FieldOnlyMarkers = []*definitionWithHelp{
 
 	must(markers.MakeDefinition("nullable", markers.DescribesField, Nullable{})).
 		WithHelp(Nullable{}.Help()),
+
+	// Default is a raw definition to allow json-formatted content to be read without parsing.
+	must(markers.MakeRawDefinition("kubebuilder:validation:Default", markers.DescribesField, Default{})).
+		WithHelp(Default{}.Help()),
 }
 
 func init() {
@@ -158,6 +163,14 @@ type Type string
 //
 // This is often not necessary, but may be helpful with custom serialization.
 type Nullable struct{}
+
+// +controllertools:marker:generateHelp:category="CRD validation"
+// Default sets the default value for this field.
+//
+// A default value will be accepted as a json-formatted string (e.g. `true`,
+// `"Cluster"`, `1.24`, `[1,2]`, `{"policy": "delete"}`) and validated as the
+// type indicated for the field.
+type Default markers.RawArguments
 
 func (m Maximum) ApplyToSchema(schema *v1beta1.JSONSchemaProps) error {
 	if schema.Type != "integer" {
@@ -282,5 +295,60 @@ func (m Type) ApplyFirst() {}
 
 func (m Nullable) ApplyToSchema(schema *v1beta1.JSONSchemaProps) error {
 	schema.Nullable = true
+	return nil
+}
+
+// Defaults are only valid CRDs created with the v1 API
+func (m Default) ApplyToSchema(schema *v1beta1.JSONSchemaProps) error {
+	// Convert versioned schema to unversioned form
+	marshalledSchema, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	unversionedSchema := &apiext.JSONSchemaProps{}
+	err = json.Unmarshal(marshalledSchema, unversionedSchema)
+	if err != nil {
+		return err
+	}
+
+	// Initialize validator for schema
+	crValidation := &apiext.CustomResourceValidation{
+		OpenAPIV3Schema: unversionedSchema,
+	}
+	validator, _, err := validation.NewSchemaValidator(crValidation)
+	if err != nil {
+		return err
+	}
+
+	bytes := []byte(m)
+
+	// Quote strings for json compatibility.
+	if schema.Type == "string" && bytes[0] != '"' && bytes[len(m)-1] != '"' {
+		bytes = append(bytes, 0)
+		copy(bytes[1:], bytes[0:])
+		bytes[0] = '"'
+		bytes = append(bytes, '"')
+	}
+
+	// Unmarshal the supplied default to an empty interface
+	var obj interface{}
+	err = json.Unmarshal(bytes, &obj)
+	if err != nil {
+		return err
+	}
+
+	// Validate the default with the field's schema.
+	result := validator.Validate(obj)
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("default fails validation: %v", result.Errors)
+	}
+
+	// Round-trip the object to ensure a normalized form for comparison.
+	marshalledDefault, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+
+	schema.Default = &v1beta1.JSON{Raw: marshalledDefault}
 	return nil
 }
